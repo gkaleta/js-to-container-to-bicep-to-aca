@@ -256,3 +256,89 @@ EOF
 az deployment group create --resource-group $resource_group_name --template-file $app_name.bicep
 
 ```
+
+
+### the above steps assumes that you need to build the Azure resources
+
+### Now lets build the sevices using existing ACR and ACA:
+
+```bash
+#!/bin/bash
+
+# Set variables
+app_name="myapp"
+acr_name="myregistry"
+resource_group_name="myresourcegroup"
+location="eastus"
+app_service_plan_name="${app_name}-asp"
+web_app_name="${app_name}-web"
+
+# Create a resource group if it doesn't exist
+if [[ $(az group exists --name $resource_group_name) == false ]]; then
+    az group create --name $resource_group_name --location $location
+fi
+
+# Create app.js file
+cat <<EOF > app.js
+function generateStorageKey() {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  const length = 64;
+  for (let i = 0; i < length; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result;
+}
+
+console.log(generateStorageKey());
+EOF
+
+# Build and push Docker image to ACR
+az acr build --registry $acr_name --image $app_name:v1 .
+
+# Test the container image by running it locally
+docker run $acr_name.azurecr.io/$app_name:v1
+
+# Create a Bicep file
+cat <<EOF > $app_name.bicep
+resource appServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = {
+  name: '$app_service_plan_name'
+  location: '$location'
+  kind: 'linux'
+  sku: {
+    name: 'B1'
+    tier: 'Basic'
+    size: 'B1'
+    family: 'B'
+  }
+}
+
+resource webApp 'Microsoft.Web/sites@2021-02-01' = {
+  name: '$web_app_name'
+  location: '$location'
+  kind: 'app'
+  dependsOn: [
+    appServicePlan
+  ]
+  properties: {
+    serverFarmId: appServicePlan.id
+    siteConfig: {
+      appSettings: [
+        {
+          name: 'STORAGE_KEY'
+          value: \$(node -e "console.log(require('./app.js').generateStorageKey())")
+        }
+      ]
+      linuxFxVersion: 'DOCKER|$acr_name.azurecr.io/$app_name:v1'
+    }
+  }
+}
+EOF
+
+# Deploy to Azure Container App
+az deployment group create --resource-group $resource_group_name --template-file $app_name.bicep
+
+```
+
+### This script builds the Docker image using az acr build and pushes it to the ACR. It also tests the container image by running it locally. The rest of the script remains the same as the previous version.
+
