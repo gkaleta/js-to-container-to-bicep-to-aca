@@ -174,3 +174,85 @@ az deployment group create --resource-group myResourceGroup --template-file myap
 
 ### This script will create a new directory for your app, generate app.js and Dockerfile, build a Docker image, test it locally, create a Bicep file with the necessary resources, and deploy the container to an Azure Container App with a random value for the STORAGE_KEY app setting.
 
+
+## If you want to build it using *az acr build* instead of doing it locall it perfor the following:
+
+```bash
+#!/bin/bash
+
+# Set variables
+app_name="myapp"
+acr_name="myregistry"
+resource_group_name="myresourcegroup"
+location="eastus"
+
+# Create a resource group
+az group create --name $resource_group_name --location $location
+
+# Create a container registry
+az acr create --resource-group $resource_group_name --name $acr_name --sku Basic
+
+# Log in to the registry
+az acr login --name $acr_name
+
+# Create app.js file
+cat <<EOF > app.js
+function generateStorageKey() {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  const length = 64;
+  for (let i = 0; i < length; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result;
+}
+
+console.log(generateStorageKey());
+EOF
+
+# Build and push Docker image to ACR
+az acr build --registry $acr_name --image $app_name:v1 .
+
+# Test the container image by running it locally
+docker run $acr_name.azurecr.io/$app_name:v1
+
+# Create a Bicep file
+cat <<EOF > $app_name.bicep
+resource appServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = {
+  name: '${app_name}-asp'
+  location: '${location}'
+  kind: 'linux'
+  sku: {
+    name: 'B1'
+    tier: 'Basic'
+    size: 'B1'
+    family: 'B'
+  }
+}
+
+resource webApp 'Microsoft.Web/sites@2021-02-01' = {
+  name: '${app_name}-web'
+  location: '${location}'
+  kind: 'app'
+  dependsOn: [
+    appServicePlan
+  ]
+  properties: {
+    serverFarmId: appServicePlan.id
+    siteConfig: {
+      appSettings: [
+        {
+          name: 'STORAGE_KEY'
+          value: \$(node -e "console.log(require('./app.js').generateStorageKey())")
+        }
+      ]
+      linuxFxVersion: 'DOCKER|\${acr_name}.azurecr.io/\${app_name}:v1'
+    }
+  }
+}
+EOF
+
+# Deploy to Azure Container App
+az deployment group create --resource-group $resource_group_name --template-file $app_name.bicep
+
+```
