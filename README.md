@@ -132,7 +132,7 @@ docker run myapp:v1
 
 # Create a Bicep file
 cat <<EOF > myapp.bicep
-resource appServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
   name: 'myapp-asp'
   location: 'eastus'
   kind: 'linux'
@@ -144,7 +144,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2021-02-01' = {
   }
 }
 
-resource webApp 'Microsoft.Web/sites@2021-02-01' = {
+resource webApp 'Microsoft.Web/sites@2022-09-01' = {
   name: 'myapp-web'
   location: 'eastus'
   kind: 'app'
